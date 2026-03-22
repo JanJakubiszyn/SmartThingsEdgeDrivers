@@ -1,6 +1,6 @@
-name: 'Matter Switch'
-packageKey: 'matter-switch'
+name: 'Matter Switch for Hager - After rebase'
+packageKey: 'matter-switch-for-hag'
 permissions:
   matter: {}
-description: "SmartThings driver for Matter switch devices"
+description: "Dynamic changes applied. Always on not working"
 vendorSupportInformation: "https://support.smartthings.com"

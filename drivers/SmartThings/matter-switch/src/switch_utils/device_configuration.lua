@@ -33,6 +33,13 @@ function ChildConfiguration.create_or_update_child_devices(driver, device, serve
       local child_profile, _ = assign_profile_fn(device, ep_id, true)
       local existing_child_device = device:get_field(fields.IS_PARENT_CHILD_DEVICE) and switch_utils.find_child(device, ep_id)
       if not existing_child_device then
+
+          -- Hager parent device handling
+          local parent_id = device.id
+          if device.manufacturer_info.vendor_id == fields.HAGER_VENDOR_ID then
+              parent_id = device.parent_device_id
+          end
+
         driver:try_create_device({
           type = "EDGE_CHILD",
           label = label_and_name,
@@ -143,15 +150,26 @@ function ButtonDeviceConfiguration.update_button_component_map(device, default_e
   table.sort(button_eps)
   local component_map = {}
   component_map["main"] = default_endpoint_id
+
+  local is_hager_vendor = (device.manufacturer_info.vendor_id == fields.HAGER_VENDOR_ID)
+  local first_button_ep = button_eps[1]
+
+  if is_hager_vendor and first_button_ep ~= default_endpoint_id then
+    component_map["main"] = first_button_ep
+  end
+
   for component_num, ep in ipairs(button_eps) do
     if ep ~= default_endpoint_id then
-      local button_component = "button"
-      if #button_eps > 1 then
-        button_component = button_component .. component_num
+      if not (is_hager_vendor and ep == first_button_ep) then
+        local button_component = "button"
+        if #button_eps > 1 then
+          button_component = button_component .. component_num
+        end
+        component_map[button_component] = ep
       end
-      component_map[button_component] = ep
     end
   end
+  
   device:set_field(fields.COMPONENT_TO_ENDPOINT_MAP, component_map, {persist = true})
 end
 
@@ -222,6 +240,22 @@ function DeviceConfiguration.match_profile(driver, device)
     ChildConfiguration.create_or_update_child_devices(driver, device, server_onoff_ep_ids, default_endpoint_id, SwitchDeviceConfiguration.assign_profile_for_onoff_ep)
   end
 
+    -- Hager vendor override checks
+  if device.manufacturer_info.vendor_id == fields.HAGER_VENDOR_ID then
+    local product_override = fields.vendor_overrides[fields.HAGER_VENDOR_ID][device.manufacturer_info.product_id]
+    
+    if product_override then
+      if product_override.has_occupancy_sensing and device:supports_server_cluster(clusters.OccupancySensing.ID) then
+        return
+      end
+      
+      if product_override.has_window_covering and device:supports_server_cluster(clusters.WindowCovering.ID) then
+        return
+      end
+    end
+  end
+
+  --
   if switch_utils.tbl_contains(server_onoff_ep_ids, default_endpoint_id) then
     updated_profile = SwitchDeviceConfiguration.assign_profile_for_onoff_ep(device, default_endpoint_id)
     local generic_profile = function(s) return string.find(updated_profile or "", s, 1, true) end
@@ -260,3 +294,5 @@ return {
   SwitchCfg = SwitchDeviceConfiguration,
   ButtonCfg = ButtonDeviceConfiguration
 }
+
+

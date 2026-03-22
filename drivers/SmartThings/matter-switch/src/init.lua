@@ -17,16 +17,17 @@ local attribute_handlers = require "switch_handlers.attribute_handlers"
 local event_handlers = require "switch_handlers.event_handlers"
 local capability_handlers = require "switch_handlers.capability_handlers"
 
+
 -- Include driver-side definitions when lua libs api version is < 11
 if version.api < 11 then
-  clusters.ElectricalEnergyMeasurement = require "embedded_clusters.ElectricalEnergyMeasurement"
-  clusters.ElectricalPowerMeasurement = require "embedded_clusters.ElectricalPowerMeasurement"
-  clusters.PowerTopology = require "embedded_clusters.PowerTopology"
-  clusters.ValveConfigurationAndControl = require "embedded_clusters.ValveConfigurationAndControl"
+    clusters.ElectricalEnergyMeasurement = require "embedded_clusters.ElectricalEnergyMeasurement"
+    clusters.ElectricalPowerMeasurement = require "embedded_clusters.ElectricalPowerMeasurement"
+    clusters.PowerTopology = require "embedded_clusters.PowerTopology"
+    clusters.ValveConfigurationAndControl = require "embedded_clusters.ValveConfigurationAndControl"
 end
 
 if version.api < 16 then
-  clusters.Descriptor = require "embedded_clusters.Descriptor"
+    clusters.Descriptor = require "embedded_clusters.Descriptor"
 end
 
 local SwitchLifecycleHandlers = {}
@@ -340,6 +341,7 @@ local matter_driver_template = {
     capabilities.zoneManagement
   },
   sub_drivers = {
+    switch_utils.lazy_load("sub_drivers.Hager"),
     switch_utils.lazy_load_if_possible("sub_drivers.aqara_cube"),
     switch_utils.lazy_load("sub_drivers.camera"),
     switch_utils.lazy_load_if_possible("sub_drivers.eve_energy"),
