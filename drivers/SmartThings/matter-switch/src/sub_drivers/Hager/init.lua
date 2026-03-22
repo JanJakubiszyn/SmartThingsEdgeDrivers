@@ -454,10 +454,13 @@ end
 
 local current_pos_handler = function(attribute)
     return function(driver, device, ib, response)
-        if ib.data.value == nil then return end
+        if ib.data.value == nil then
+            return
+        end
         local windowShade = capabilities.windowShade.windowShade
         local position = 100 - math.floor(ib.data.value / 100)
         local reverse = device:get_field(REVERSE_POLARITY)
+        emit_for_ep(driver, device, ib.endpoint_id, attribute(position))
         if attribute == capabilities.windowShadeLevel.shadeLevel then
             device:set_field(CURRENT_LIFT, position)
         else
@@ -656,7 +659,7 @@ local function contains_ep (list, ep)
     end
     return false
 end
-local log = require "log"
+
 local function device_type_handler (driver, device, ib)
     local host = get_host(driver, device)
     local subhub = get_subhub(driver, device)
@@ -745,13 +748,11 @@ local function device_type_handler (driver, device, ib)
             create_child_for_ep(driver, device, ib.endpoint_id, "light-level")
 
         elseif device_type_id == (514 or 515) then
-            log.info("Zczytałem i wrzucam subscriby!")
             subhub:send(cluster_base.subscribe(subhub, ep, clusters.WindowCovering.ID, clusters.WindowCovering.attributes.OperationalStatus.ID,  nil))
             subhub:send(cluster_base.subscribe(subhub, ep, clusters.WindowCovering.ID, clusters.WindowCovering.attributes.CurrentPositionLiftPercent100ths.ID,  nil))
             if device.manufacturer_info.product_id == 0x0005 then
                 return
             else
-                log.info("Tworze device")
                 create_child_for_ep(driver, device, ib.endpoint_id, "window-covering")
             end
         elseif device_type_id == 263 then
@@ -824,7 +825,7 @@ local Hager_switch = {
             [capabilities.switchLevel.commands.setLevel.NAME] = handle_switch_set_levels
         },
     },
-    can_handle = require("sub_drivers.Hager.can_handle")
+    can_handle =  require("sub_drivers.Hager.can_handle")
 }
 
 return Hager_switch
