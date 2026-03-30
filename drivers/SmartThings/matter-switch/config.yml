@@ -1,5 +1,5 @@
-name: 'Matter Switch for Hager - After rebase'
-packageKey: 'matter-switch-for-hag'
+name: 'Matter Switch'
+packageKey: 'matter-switch'
 permissions:
   matter: {}
 description: "Dynamic changes applied. Always on not working"
