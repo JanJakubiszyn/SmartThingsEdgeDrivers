@@ -9,7 +9,7 @@ return function(opts, driver, device, ...)
     local parent = device:get_parent_device()
     if parent
       and parent.network_type == device_lib.NETWORK_TYPE_MATTER
-      and vendor_overrides[fields.HAGER_VENDOR_ID][parent.manufacturer_info.product_id]
+      and vendor_overrides[0x1285][parent.manufacturer_info.product_id]
     then
       return true, require("sub_drivers.Hager")
     end
@@ -17,8 +17,8 @@ return function(opts, driver, device, ...)
   end
 
   if device.network_type == device_lib.NETWORK_TYPE_MATTER
-    and device.manufacturer_info.vendor_id == fields.HAGER_VENDOR_ID
-    and vendor_overrides[fields.HAGER_VENDOR_ID][device.manufacturer_info.product_id]
+    and device.manufacturer_info.vendor_id == 0x1285
+    and vendor_overrides[0x1285][device.manufacturer_info.product_id]
   then
     return true, require("sub_drivers.Hager")
   end

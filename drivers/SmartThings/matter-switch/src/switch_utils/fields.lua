@@ -5,9 +5,6 @@ local st_utils = require "st.utils"
 
 local SwitchFields = {}
 
--- Vendor IDs
-SwitchFields.HAGER_VENDOR_ID = 0x1285
-
 SwitchFields.MOST_RECENT_TEMP = "mostRecentTemp"
 SwitchFields.RECEIVED_X = "receivedX"
 SwitchFields.RECEIVED_Y = "receivedY"
@@ -116,7 +113,7 @@ SwitchFields.vendor_overrides = {
   [0x1189] = { -- LEDVANCE_MANUFACTURER_ID
     [0x0891] = { target_profile = "switch-binary", initial_profile = "light-binary" },
   },
-  [0x1285] = { -- HAGER_VENDOR_ID
+  [0x1285] = { -- HAGER_MANUFACTURER_ID
     [0x0005] = {}, -- Hager WAASYS 1g switch
     [0x0006] = {}, -- Hager WAASYS Hager 2g switch
     [0x0007] = {}, -- Hager WAASYS PIR sensor

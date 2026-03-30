@@ -166,7 +166,7 @@ function utils.find_default_endpoint(device)
   end
 
     -- Hager vendor special handling
-    if device.manufacturer_info.vendor_id == fields.HAGER_VENDOR_ID then
+    if device.manufacturer_info.vendor_id == 0x1285 then
       if #momentary_switch_ep_ids > 0 then
         log.info("Hager device with buttons detected, using default endpoint")
         return device.MATTER_DEFAULT_ENDPOINT
