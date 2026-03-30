@@ -237,25 +237,26 @@ function DeviceConfiguration.match_profile(driver, device)
 
   local server_onoff_ep_ids = device:get_endpoints(clusters.OnOff.ID) -- get_endpoints defaults to return EPs supporting SERVER or BOTH
   if #server_onoff_ep_ids > 0 then
-    ChildConfiguration.create_or_update_child_devices(driver, device, server_onoff_ep_ids, default_endpoint_id, SwitchDeviceConfiguration.assign_profile_for_onoff_ep)
+    if device.manufacturer_info.vendor_id == fields.HAGER_VENDOR_ID then
+    else
+      ChildConfiguration.create_or_update_child_devices(driver, device, server_onoff_ep_ids, default_endpoint_id, SwitchDeviceConfiguration.assign_profile_for_onoff_ep)
+    end
   end
 
     -- Hager vendor override checks
   if device.manufacturer_info.vendor_id == fields.HAGER_VENDOR_ID then
     local product_override = fields.vendor_overrides[fields.HAGER_VENDOR_ID][device.manufacturer_info.product_id]
-    
     if product_override then
-      if product_override.has_occupancy_sensing and device:supports_server_cluster(clusters.OccupancySensing.ID) then
+      if product_override and device:supports_server_cluster(clusters.OccupancySensing.ID) then
         return
       end
-      
-      if product_override.has_window_covering and device:supports_server_cluster(clusters.WindowCovering.ID) then
+
+      if product_override and device:supports_server_cluster(clusters.WindowCovering.ID) then
         return
       end
     end
   end
 
-  --
   if switch_utils.tbl_contains(server_onoff_ep_ids, default_endpoint_id) then
     updated_profile = SwitchDeviceConfiguration.assign_profile_for_onoff_ep(device, default_endpoint_id)
     local generic_profile = function(s) return string.find(updated_profile or "", s, 1, true) end
@@ -279,7 +280,9 @@ function DeviceConfiguration.match_profile(driver, device)
 
   -- initialize the main device card with buttons if applicable
   local momentary_switch_ep_ids = device:get_endpoints(clusters.Switch.ID, {feature_bitmap=clusters.Switch.types.SwitchFeature.MOMENTARY_SWITCH})
+
   if switch_utils.tbl_contains(fields.STATIC_BUTTON_PROFILE_SUPPORTED, #momentary_switch_ep_ids) then
+
     updated_profile = ButtonDeviceConfiguration.update_button_profile(device, default_endpoint_id, #momentary_switch_ep_ids)
     -- All button endpoints found will be added as additional components in the profile containing the default_endpoint_id.
     ButtonDeviceConfiguration.update_button_component_map(device, default_endpoint_id, momentary_switch_ep_ids)
@@ -294,5 +297,4 @@ return {
   SwitchCfg = SwitchDeviceConfiguration,
   ButtonCfg = ButtonDeviceConfiguration
 }
-
 

@@ -1,4 +1,4 @@
--- Copyright © 2025 SmartThings, Inc.
+-- Copyright © 2026 SmartThings, Inc.
 -- Licensed under the Apache License, Version 2.0
 
 local capabilities = require "st.capabilities"
@@ -25,12 +25,9 @@ local REVERSE_POLARITY = "__reverse_polarity"
 local PRESET_LEVEL_KEY = "__preset_level_key"
 local BUTTON_EPS = "__button_eps"
 
-local window_covering = nil
 local DEFAULT_PRESET_LEVEL = 50
 local descriptor_cluster_id = 0x001D
 local part_list_attr_id = 0x0003
-
--- #TODO handle descriptor cluster
 
 local function subscribe_descriptor (device, endpoint_id)
     local req = cluster_base.subscribe(device, endpoint_id, descriptor_cluster_id, part_list_attr_id, nil)
@@ -38,7 +35,7 @@ local function subscribe_descriptor (device, endpoint_id)
 end
 
 local function set_field_for_endpoint(device, field, endpoint, value, persist)
-    device:set_field(string.format("%s_%d", field, endpoint), value, {persist = persist})
+    device:set_field(string.format("%s_%d", field, endpoint), value, { persist = persist })
 end
 local function get_field_for_endpoint(device, field, endpoint)
     return device:get_field(string.format("%s_%d", field, endpoint))
@@ -46,6 +43,9 @@ end
 
 local function get_subhub (driver, device)
     local id = device:get_field(SUBHUB_ID)
+    if not id then
+        return nil
+    end
     return driver:get_device_info(id)
 end
 
@@ -61,7 +61,6 @@ local function build_lux_to_motion_map(occ_eps, lux_eps)
         return map
     end
 
-    -- stabilny porządek
     table.sort(occ_eps)
     table.sort(lux_eps)
 
@@ -105,9 +104,7 @@ end
 local function emit_for_ep(driver, device, ep, event)
     local host = get_host(driver, device)
     local subhub = get_subhub(driver, device)
-
     local mapped_ep = ep
-
     local lux_map = device:get_field(FIELD_LUX_TO_MOTION)
 
     if lux_map and lux_map[ep] then
@@ -124,14 +121,18 @@ local function emit_for_ep(driver, device, ep, event)
 end
 
 local function create_child_for_ep(driver, device, ep_id, profile)
-    local subhub = get_subhub(driver,device)
+    local subhub = get_subhub(driver, device)
+
+    if not subhub then
+        return nil
+    end
 
     local key = string.format("%d", ep_id)
 
     local device_num = (subhub:get_field("CHILD_COUNTER") or 0) + 1
     subhub:set_field("CHILD_COUNTER", device_num, { persist = false })
 
-local name = string.format("%s %d", subhub.label, device_num)
+    local name = string.format("%s %d", subhub.label, device_num)
     driver:try_create_device({
         type = "EDGE_CHILD",
         label = name,
@@ -169,20 +170,18 @@ local function diff (driver, device, ib_elements)
             table.insert(added, ep)
         end
     end
-
-
-
     return removed, added
 end
 
 local function resolve_host_and_ep(driver, device)
     local parent = get_subhub(driver, device)
     local host = get_host(driver, device)
+
     if device.network_type == device_lib.NETWORK_TYPE_MATTER then
         local wc_eps = device:get_endpoints(clusters.WindowCovering.ID) or {}
         local wc_main = wc_eps[1]
 
-        local onOff_eps = host:get_field(FIELD_MAIN_ONOFF_EP)
+        local onOff_eps = host and host:get_field(FIELD_MAIN_ONOFF_EP)
 
         if wc_main then
             return parent, wc_main
@@ -251,8 +250,9 @@ local function device_init(driver, device)
         device:set_field(FIELD_MOTION_HOST, oc_eps[1])
     elseif #wc_eps > 0 and product_id == 0x0005 then
         device:try_update_metadata({ profile = "window-covering" })
+    elseif #wc_eps > 0 and product_id == 0x0006 then
+        host:try_update_metadata({ profile = "2-button" })
     end
-
     if subhub then
         subhub:subscribe()
     end
@@ -267,22 +267,21 @@ local function handle_descriptor_report(driver, device, ib, response)
     local subhub = get_subhub(driver, device)
     local host = get_host(driver, device)
 
+    if not subhub then
+        return
+    end
+
     local new_eps = extract(ib) or {}
     table.sort(new_eps)
 
     local removed, added = diff(driver, device, new_eps)
-
-    if #removed > 0 then
-    end
-    if #added > 0 then
-    end
 
     device:set_field(ACTIVE_EPS, new_eps, { persist = true })
 
     local occ_eps = device:get_endpoints(clusters.OccupancySensing.ID)
     local lux_eps = device:get_endpoints(clusters.IlluminanceMeasurement.ID)
     local lux_to_motion = build_lux_to_motion_map(occ_eps, lux_eps)
-    --
+
     if next(lux_to_motion) ~= nil then
         device:set_field(FIELD_LUX_TO_MOTION, lux_to_motion)
     end
@@ -295,8 +294,6 @@ local function handle_descriptor_report(driver, device, ib, response)
 
         if subhub.id == device.id then
             subhub:send(clusters.Descriptor.attributes.DeviceTypeList:read(subhub, ep))
-
-            local main_onoff_ep_at_add = device:get_field(FIELD_MAIN_ONOFF_EP)
 
             if ep == 3 and device.network_type == device_lib.NETWORK_TYPE_MATTER and device.manufacturer_info.product_id == 0x0005 then
                 host:try_update_metadata({ profile = "light-binary" })
@@ -331,7 +328,6 @@ local function handle_descriptor_report(driver, device, ib, response)
         end
     end
 
-    -- REMOVED
     for _, ep in ipairs(removed) do
 
         local button_eps = subhub:get_field(BUTTON_EPS) or {}
@@ -411,45 +407,55 @@ local function on_off_attr_handler(driver, device, ib, response)
 end
 
 local function handle_preset(driver, device, cmd)
-    local host, ep = resolve_host_and_ep(driver, device)
-    if not host or not ep then return end
+    local subhub, ep = resolve_host_and_ep(driver, device)
+    if not subhub or not ep then
+        return
+    end
     local lift_value = device:get_field(PRESET_LEVEL_KEY) or DEFAULT_PRESET_LEVEL
     local hundredths_lift_percent = (100 - tonumber(lift_value)) * 100
-    host:send(clusters.WindowCovering.server.commands.GoToLiftPercentage(host, ep, hundredths_lift_percent))
+    subhub:send(clusters.WindowCovering.server.commands.GoToLiftPercentage(subhub, ep, hundredths_lift_percent))
 end
 
 local function handle_close(driver, device, cmd)
-    local host, ep = resolve_host_and_ep(driver, device)
-    if not host or not ep then return end
-    local req = clusters.WindowCovering.commands.DownOrClose(host, ep)
-    if device:get_field(REVERSE_POLARITY) then
-        req = clusters.WindowCovering.server.commands.UpOrOpen(host, ep)
+    local subhub, ep = resolve_host_and_ep(driver, device)
+    if not subhub or not ep then
+        return
     end
-    host:send(req)
+    local req = clusters.WindowCovering.commands.DownOrClose(subhub, ep)
+    if device:get_field(REVERSE_POLARITY) then
+        req = clusters.WindowCovering.server.commands.UpOrOpen(subhub, ep)
+    end
+    subhub:send(req)
 end
 
 local function handle_open(driver, device, cmd)
-    local host, ep = resolve_host_and_ep(driver, device)
-    if not host or not ep then return end
-    local req = clusters.WindowCovering.commands.UpOrOpen(host, ep)
-    if device:get_field(REVERSE_POLARITY) then
-        req = clusters.WindowCovering.server.commands.DownOrClose(host, ep)
+    local subhub, ep = resolve_host_and_ep(driver, device)
+    if not subhub or not ep then
+        return
     end
-    host:send(req)
+    local req = clusters.WindowCovering.commands.UpOrOpen(subhub, ep)
+    if device:get_field(REVERSE_POLARITY) then
+        req = clusters.WindowCovering.server.commands.DownOrClose(subhub, ep)
+    end
+    subhub:send(req)
 end
 
 local function handle_pause(driver, device, cmd)
-    local host, ep = resolve_host_and_ep(driver, device)
-    if not host or not ep then return end
-    host:send(clusters.WindowCovering.commands.StopMotion(host, ep))
+    local subhub, ep = resolve_host_and_ep(driver, device)
+    if not subhub or not ep then
+        return
+    end
+    subhub:send(clusters.WindowCovering.commands.StopMotion(subhub, ep))
 end
 
 local function handle_shade_level(driver, device, cmd)
-    local host, ep = resolve_host_and_ep(driver, device)
-    if not host or not ep then return end
+    local subhub, ep = resolve_host_and_ep(driver, device)
+    if not subhub or not ep then
+        return
+    end
     local lift_percentage_value = 100 - cmd.args.shadeLevel
     local hundredths_lift_percentage = lift_percentage_value * 100
-    host:send(clusters.WindowCovering.commands.GoToLiftPercentage(host, ep, hundredths_lift_percentage))
+    subhub:send(clusters.WindowCovering.commands.GoToLiftPercentage(subhub, ep, hundredths_lift_percentage))
 end
 
 local current_pos_handler = function(attribute)
@@ -528,7 +534,6 @@ local function device_removed(driver, device)
         return
     end
 
-    --local hub = device:get_parent_device()
     if subhub == nil then
         return
     end
@@ -540,7 +545,6 @@ local function device_removed(driver, device)
         local child = subhub:get_child_by_parent_assigned_key(key) or nil
 
         if child then
-
             driver:try_delete_device(child.id)
         else
         end
@@ -584,27 +588,23 @@ end
 
 local function long_press_event_handler(driver, device, ib, response)
     local host = get_host(driver, device)
-    host:emit_event_for_endpoint(ib.endpoint_id, capabilities.button.button.held({state_change = true}))
+    host:emit_event_for_endpoint(ib.endpoint_id, capabilities.button.button.held({ state_change = true }))
     if get_field_for_endpoint(device, SUPPORTS_MULTI_PRESS, ib.endpoint_id) then
-        -- Ignore the next MultiPressComplete event if it is sent as part of this "long press" event sequence
         set_field_for_endpoint(device, IGNORE_NEXT_MPC, ib.endpoint_id, true)
     end
 end
 
 local function multi_press_complete_handler(driver, device, ib, response)
-    -- in the case of multiple button presses
     local host = get_host(driver, device)
-    -- emit number of times, multiple presses have been completed
     if ib.data and not switch_utils.get_field_for_endpoint(device, fields.IGNORE_NEXT_MPC, ib.endpoint_id) then
         local press_value = ib.data.elements.total_number_of_presses_counted.value
-        --capability only supports up to 6 presses
         if press_value < 7 then
-            local button_event = capabilities.button.button.pushed({state_change = true})
+            local button_event = capabilities.button.button.pushed({ state_change = true })
             if press_value == 2 then
-                button_event = capabilities.button.button.double({state_change = true})
+                button_event = capabilities.button.button.double({ state_change = true })
             elseif press_value > 2 then
 
-                button_event = capabilities.button.button(string.format("pushed_%dx", press_value), {state_change = true})
+                button_event = capabilities.button.button(string.format("pushed_%dx", press_value), { state_change = true })
             end
             host:emit_event_for_endpoint(ib.endpoint_id, button_event)
         else
@@ -617,6 +617,7 @@ local function info_changed(driver, device, event, args)
     local host = get_host(driver, device)
     local subhub = get_subhub(driver, device)
     if device.network_type == device_lib.NETWORK_TYPE_MATTER and device.profile.id ~= args.old_st_store.profile.id then
+
         host:set_endpoint_to_component_fn(switch_utils.endpoint_to_component)
         host.thread:call_with_delay(5, function()
             if host:supports_capability(capabilities.button) then
@@ -636,7 +637,6 @@ local function info_changed(driver, device, event, args)
 
             end
         end)
-
     elseif args.old_st_store.preferences.reverse ~= device.preferences.reverse then
         if device.preferences.reverse then
             device:set_field(REVERSE_POLARITY, true, { persist = true })
@@ -645,11 +645,10 @@ local function info_changed(driver, device, event, args)
         end
     elseif args.old_st_store.preferences.presetPosition ~= device.preferences.presetPosition then
         local new_preset_value = device.preferences.presetPosition
+        log.info(new_preset_value, " To new preset vlaue ")
         device:set_field(PRESET_LEVEL_KEY, new_preset_value, { persist = true })
     end
 end
-
--- #TODO HELPER REFRESH FUNCTION
 
 local function contains_ep (list, ep)
     for _, v in ipairs(list) do
@@ -663,18 +662,21 @@ end
 local function device_type_handler (driver, device, ib)
     local host = get_host(driver, device)
     local subhub = get_subhub(driver, device)
+
+    if not subhub then
+        return
+    end
+
     local stored = subhub:get_field(BUTTON_EPS) or {}
     local button_endpoints = {}
 
     local ep = ib.endpoint_id
     local value = ib.data.elements
-    --
     if stored then
         for _, v in ipairs(stored) do
             table.insert(button_endpoints, v)
         end
     end
-
 
     for _, element in ipairs(value) do
         local device_type_field = element.elements.device_type
@@ -686,7 +688,6 @@ local function device_type_handler (driver, device, ib)
                 table.insert(button_endpoints, ep)
                 table.sort(button_endpoints)
                 subhub:set_field(BUTTON_EPS, button_endpoints, { persist = true })
-                --subhub:send(cluster_base.subscribe(subhub,ep,clusters.Switch.ID, clusters.Switch.attributes.CurrentPosition.ID, nil))
             end
         end
 
@@ -717,7 +718,6 @@ local function device_type_handler (driver, device, ib)
                     create_child_for_ep(driver, subhub, 4, "light-binary")
                     return
                 end
-                -- dodane zeby handlowac signe switch moze powodowac problemy
             elseif ep == 3 and device.manufacturer_info.product_id == 0x0006 then
                 host.thread:call_with_delay(4, function()
                     local latest_eps = host:get_field(ACTIVE_EPS) or {}
@@ -736,20 +736,21 @@ local function device_type_handler (driver, device, ib)
                 end)
                 return
             end
-
             create_child_for_ep(driver, subhub, ib.endpoint_id, "light-binary")
 
-        elseif device_type_id == (257 or 260) then
+        elseif device_type_id == 257 then
             subhub:send(cluster_base.subscribe(subhub, ep, clusters.OnOff.ID, clusters.OnOff.attributes.OnOff.ID, nil))
             subhub:send(cluster_base.subscribe(subhub, ep, clusters.LevelControl.ID, clusters.LevelControl.attributes.CurrentLevel.ID, nil))
+            subhub:send(cluster_base.subscribe(subhub, ep, clusters.LevelControl.ID, clusters.LevelControl.attributes.MaxLevel.ID, nil))
+            subhub:send(cluster_base.subscribe(subhub, ep, clusters.LevelControl.ID, clusters.LevelControl.attributes.MinLevel.ID, nil))
             if ep == 4 and device.manufacturer_info.product_id == 0x0005 then
                 return
             end
             create_child_for_ep(driver, device, ib.endpoint_id, "light-level")
 
-        elseif device_type_id == (514 or 515) then
-            subhub:send(cluster_base.subscribe(subhub, ep, clusters.WindowCovering.ID, clusters.WindowCovering.attributes.OperationalStatus.ID,  nil))
-            subhub:send(cluster_base.subscribe(subhub, ep, clusters.WindowCovering.ID, clusters.WindowCovering.attributes.CurrentPositionLiftPercent100ths.ID,  nil))
+        elseif device_type_id == 514 then
+            subhub:send(cluster_base.subscribe(subhub, ep, clusters.WindowCovering.ID, clusters.WindowCovering.attributes.OperationalStatus.ID, nil))
+            subhub:send(cluster_base.subscribe(subhub, ep, clusters.WindowCovering.ID, clusters.WindowCovering.attributes.CurrentPositionLiftPercent100ths.ID, nil))
             if device.manufacturer_info.product_id == 0x0005 then
                 return
             else
@@ -765,13 +766,12 @@ local function device_type_handler (driver, device, ib)
     end
 end
 
-
 local Hager_switch = {
     NAME = "Hager matter switch handler",
     lifecycle_handlers = {
         init = device_init,
-        removed = device_removed,
         infoChanged = info_changed,
+        removed = device_removed,
     },
     matter_handlers = {
         attr = {
@@ -825,7 +825,7 @@ local Hager_switch = {
             [capabilities.switchLevel.commands.setLevel.NAME] = handle_switch_set_levels
         },
     },
-    can_handle =  require("sub_drivers.Hager.can_handle")
+    can_handle = require("sub_drivers.Hager.can_handle")
 }
 
 return Hager_switch

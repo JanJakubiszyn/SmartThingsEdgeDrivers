@@ -117,8 +117,9 @@ SwitchFields.vendor_overrides = {
     [0x0891] = { target_profile = "switch-binary", initial_profile = "light-binary" },
   },
   [0x1285] = { -- HAGER_VENDOR_ID
-    [0x0007] = { has_occupancy_sensing = true }, -- Hager PIR sensor
-    [0x0005] = { has_window_covering = true }, -- Hager window covering device
+    [0x0005] = {}, -- Hager WAASYS 1g switch
+    [0x0006] = {}, -- Hager WAASYS Hager 2g switch
+    [0x0007] = {}, -- Hager WAASYS PIR sensor
   },
   [0x1321] = { -- SONOFF_MANUFACTURER_ID
     [0x000C] = { target_profile = "switch-binary", initial_profile = "plug-binary" },
